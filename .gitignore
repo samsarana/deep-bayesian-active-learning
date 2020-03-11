@@ -1,0 +1,5 @@
+logs/
+logs_old/
+__pycache__/
+.vscode
+junk.py
