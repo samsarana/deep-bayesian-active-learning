@@ -66,7 +66,7 @@ def test(args, model, test_loader):
     
 
 def get_train_loader(train_data, acq_idx, args):
-    train_sampler = SubsetRandomSampler(acq_idx) # TODO is passing a set OK or need to make list?
+    train_sampler = SubsetRandomSampler(list(acq_idx))
     train_loader = torch.utils.data.DataLoader(
                     train_data, batch_size=args.train_batch_size, sampler=train_sampler)
     return train_loader
