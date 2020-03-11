@@ -24,22 +24,21 @@ def balanced_sample(dataset, n_classes, k, idx_possible):
     Returns
     -------
     TODO complete docstr
-    TODO do computation with sets; faster
     """
-    idx_sampled = []
+    idx_sampled = set()
     labels = [] # used to check for correctness
     label_counts = {label: 0 for label in range(n_classes)}
     while any(count < k for count in label_counts.values()):
-        i = random.choice(idx_possible)
+        i = random.choice(tuple(idx_possible))
         data, label = dataset[i]
         if label_counts[label] < k:
-            idx_sampled.append(i)
+            idx_sampled.add(i)
             idx_possible.remove(i)
             label_counts[label] += 1
             labels.append(label)
     assert all(labels.count(label) == k for label in range(n_classes))
     assert all(j not in idx_possible for j in idx_sampled)
-    return set(idx_sampled), set(idx_possible)
+    return idx_sampled, idx_possible
 
 
 class Sampler(object):
