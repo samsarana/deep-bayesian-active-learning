@@ -37,11 +37,16 @@ def load_data(args):
 
     return train_data, test_data
 
-    # return train_data, set(pool_idx), pretrain_loader, valid_loader, test_loader
+def get_train_loader(train_data, acq_idx, args):
+    train_sampler = SubsetRandomSampler(list(acq_idx))
+    train_loader = torch.utils.data.DataLoader(
+                    train_data, batch_size=args.train_batch_size, sampler=train_sampler)
+    return train_loader
 
 
 def train(args, model, train_loader, optimizer):
     model.train()
+    # train_loss
     for data, target in train_loader:
         optimizer.zero_grad()
         output = model(data)
@@ -63,13 +68,6 @@ def test(args, model, test_loader):
             correct += pred.eq(target.view_as(pred)).sum().item()
     test_loss /= test_set_size
     return test_loss, correct
-    
-
-def get_train_loader(train_data, acq_idx, args):
-    train_sampler = SubsetRandomSampler(list(acq_idx))
-    train_loader = torch.utils.data.DataLoader(
-                    train_data, batch_size=args.train_batch_size, sampler=train_sampler)
-    return train_loader
 
 def fit(model, optimizer, train_loader, test_loader, writers, args, n_acqs, epochs):
     writer1, writer2 = writers
