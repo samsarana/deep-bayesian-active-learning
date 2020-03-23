@@ -7,6 +7,7 @@ from torchvision import datasets, transforms
 from models import BayesianCNN
 from torch.utils.data.sampler import SubsetRandomSampler
 from sampling import balanced_sample, StratifiedSampler
+from active_learning import *
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -18,9 +19,18 @@ def parse_arguments():
     parser.add_argument('--valid_batch_size', type=int, default=20, help='Batch size for pretraining validation with 100 examples')
     parser.add_argument('--train_batch_size', type=int, default=32, help='Batch size for training (on 10-1000 examples)')
     parser.add_argument('--test_batch_size', type=int, default=32, help='Batch size for testing on 10k examples')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs for training')
+    parser.add_argument('--test_interval', type=int, default=10, help='Number of epochs to train before testing')
     # active learning settings
-    parser.add_argument('--acq_func_ID', type=str, default='random', help='Choice of random, bald, max_ent, mean_std or var_ratios acquisition functions')
+    acq_funcs = {'random': acq_random,
+                 'BALD': acq_BALD,
+                 'max_ent': acq_max_ent,
+                 'mean_std': acq_mean_std,
+                 'var_ratios': acq_var_ratios
+    }
+    parser.add_argument('--acq_func_ID', type=str, default='random', choices=acq_funcs.keys(), help='Choose acquisition function')
     args = parser.parse_args()
+    args.acq_func = acq_funcs[args.acq_func_ID] # create acq_func arg using acq_func_ID
     return args
 
 def load_data(args):
@@ -46,18 +56,26 @@ def get_train_loader(train_data, acq_idx, args):
 
 def train(args, model, train_loader, optimizer):
     model.train()
-    # train_loss
+    train_set_size = len(train_loader) * train_loader.batch_size
+    train_loss = 0
+    correct = 0
     for data, target in train_loader:
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
-    return loss
+        # aggregate loss and corrects
+        train_loss += loss.item()
+        pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+        correct += pred.eq(target.view_as(pred)).sum().item()
+    ave_train_loss = train_loss / train_set_size
+    proportion_correct = correct / train_set_size
+    return train_loss, proportion_correct
 
 def test(args, model, test_loader):
-    test_set_size = len(test_loader) * test_loader.batch_size
     model.eval()
+    test_set_size = len(test_loader) * test_loader.batch_size
     test_loss = 0
     correct = 0
     with torch.no_grad():
@@ -66,22 +84,28 @@ def test(args, model, test_loader):
             test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
-    test_loss /= test_set_size
-    return test_loss, correct
+    ave_test_loss = test_loss / test_set_size
+    proportion_correct = correct / test_set_size
+    return ave_test_loss, proportion_correct
 
-def fit(model, optimizer, train_loader, test_loader, writers, args, n_acqs, epochs):
+def fit(model, optimizer, train_loader, test_loader, writers, args, n_acqs):
     writer1, writer2 = writers
-    max_correct = 0
-    for epoch in range(epochs): # TODO may to increase epochs for training on 1000 points to ensure convergence
-        train_loss = train(args, model, train_loader, optimizer)
-        writer1.add_scalar('train_loss_{}'.format(n_acqs), train_loss, epoch)
+    max_test_correct = 0
+    logging.info('Begin train/test for {} acquisitions'.format(n_acqs))
+    for epoch in range(1, args.epochs + 1): # TODO may to increase epochs for training on e.g. 1000 points to ensure convergence
+        logging.info('Begin training, epoch {}'.format(epoch))
+        train_loss, train_correct = train(args, model, train_loader, optimizer)
+        writer1.add_scalar('loss_{}'.format(n_acqs), train_loss, epoch)
+        writer1.add_scalar('correct_{}'.format(n_acqs), train_correct, epoch)
         # test on test set
-        test_loss, correct = test(args, model, test_loader)
-        writer2.add_scalar('test_loss_{}'.format(n_acqs), test_loss, epoch) # TODO nice to record all this, but will result in 200 scalar plots. I don't think I want to see them all later on
-        writer2.add_scalar('test_correct_{}'.format(n_acqs), correct, epoch)
-        max_correct = max(correct, max_correct)
-    # record max_correct
-    writer2.add_scalar('max_correct', max_correct, n_acqs)
+        if epoch % args.test_interval == 0:
+            logging.info('Begin testing, epoch {}'.format(epoch))
+            test_loss, test_correct = test(args, model, test_loader)
+            writer2.add_scalar('loss_{}'.format(n_acqs), test_loss, epoch) # TODO nice to record all this, but will result in 200 scalar plots. I don't think I want to see them all later on
+            writer2.add_scalar('correct_{}'.format(n_acqs), test_correct, epoch)
+            max_test_correct = max(test_correct, max_test_correct)
+    # record max_test_correct
+    writer2.add_scalar('max_test_correct', max_test_correct, n_acqs)
 
 
 def main():
@@ -139,9 +163,9 @@ def main():
     model = BayesianCNN()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
     train_loader = get_train_loader(train_data, acq_idx, args)
-    fit(model, optimizer, train_loader, test_loader, writers, args, n_acqusitions, epochs=50) # do pretraining on 20 examples (not quite clear if Gal does this here, but I think so)
+    fit(model, optimizer, train_loader, test_loader, writers, args, n_acqusitions) # do pretraining on 20 examples (not quite clear if Gal does this here, but I think so)
     
-    while n_acqusitions < 20: # TODO change to 1000
+    while n_acqusitions < 500: # TODO change to 1000
         # acquire 10 points from train_data according to acq_func
         new_idx = args.acq_func(train_data, pool_idx, model)
         acq_idx.update(new_idx)
@@ -151,25 +175,9 @@ def main():
         model = BayesianCNN()
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
         # train model to convergence on all points acquired so far, computing test error as we go
-        # train_loader built from train_data and acq_idx TODO: also includes pretrain_loader examples?? if not, it's a little weird because they are implicitly used in round 0 in computing acquisition function...
+        # train_loader built from train_data and acq_idx, including pretraining examples
         train_loader = get_train_loader(train_data, acq_idx, args)
-        fit(model, optimizer, train_loader, test_loader, writers, args, n_acqusitions, epochs=50)
-
-    import ipdb; ipdb.set_trace()
-
-
-def acq_random(train_data, pool_idx, model, n_acqs=10):
-    """
-    Random acquisition baseline.
-    """
-    new_idx = np.random.choice(pool_idx, size=n_acqs, replace=False)
-    return set(new_idx)
-
-def acq_BALD(train_data, pool_idx, model, n_acqs=10):
-    for i in pool_idx:
-        point = train_data[i]
-        # apply BALD on point and record info gain
-    # return 10 idx that maximise BALD
+        fit(model, optimizer, train_loader, test_loader, writers, args, n_acqusitions)
 
 
 if __name__ == '__main__':
