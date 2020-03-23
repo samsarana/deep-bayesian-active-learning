@@ -139,16 +139,13 @@ def main():
     assert len(valid_idx) == 100
     assert len(pool_idx) == len(train_data) - 120
 
+    # Make dataloaders
     # pretrain_sampler = SubsetRandomSampler(pretrain_idx)
     # valid_sampler = SubsetRandomSampler(valid_idx)
-    # pool_sampler = SubsetRandomSampler(pool_idx)
-
     # pretrain_loader = torch.utils.data.DataLoader(
     #     train_data, batch_size=args.pretrain_batch_size, sampler=pretrain_sampler)
     # valid_loader = torch.utils.data.DataLoader(
     #     train_data, batch_size=args.valid_batch_size, sampler=valid_sampler)
-    # pool_loader = torch.utils.data.DataLoader(
-        # train_data, batch_size=1, sampler=pool_sampler) # we'll draw batches of one example and on which to eval acq func
     test_loader = torch.utils.data.DataLoader(
         test_data, batch_size=args.test_batch_size) # pytorch MNIST example shuffles test set, but seems unnecessary
     
