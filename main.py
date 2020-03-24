@@ -13,6 +13,9 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     # experiment settings
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--acqs_per_round', type=int, default=10)
+    parser.add_argument('--rounds', type=int, default=50) # Gal does 100
+    parser.add_argument('--acqs_pretrain', type=int, default=20)
     # training settings
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for Adam optimizer')
     parser.add_argument('--pretrain_batch_size', type=int, default=20, help='Batch size for pretraining with 20 examples')
@@ -88,24 +91,26 @@ def test(args, model, test_loader):
     proportion_correct = correct / test_set_size
     return ave_test_loss, proportion_correct
 
-def fit(model, optimizer, train_loader, test_loader, writers, args, n_acqs):
+def fit(model, optimizer, train_loader, test_loader, writers, args, i_round):
     writer1, writer2 = writers
+    cumulative_acqs = args.acqs_pretrain + i_round * args.acqs_per_round
     max_test_correct = 0
-    logging.info('Begin train/test for {} acquisitions'.format(n_acqs))
+    logging.info('Begin train/test for {} acquisitions'.format(cumulative_acqs)
     for epoch in range(1, args.epochs + 1): # TODO may to increase epochs for training on e.g. 1000 points to ensure convergence
         logging.info('Begin training, epoch {}'.format(epoch))
         train_loss, train_correct = train(args, model, train_loader, optimizer)
-        writer1.add_scalar('loss_{}'.format(n_acqs), train_loss, epoch)
-        writer1.add_scalar('correct_{}'.format(n_acqs), train_correct, epoch)
+        cumulative_epoch = epoch + i_round * args.epochs
+        writer1.add_scalar('loss', train_loss, cumulative_epoch)
+        writer1.add_scalar('correct', train_correct, cumulative_epoch)
         # test on test set
         if epoch % args.test_interval == 0:
             logging.info('Begin testing, epoch {}'.format(epoch))
             test_loss, test_correct = test(args, model, test_loader)
-            writer2.add_scalar('loss_{}'.format(n_acqs), test_loss, epoch) # TODO nice to record all this, but will result in 200 scalar plots. I don't think I want to see them all later on
-            writer2.add_scalar('correct_{}'.format(n_acqs), test_correct, epoch)
+            writer2.add_scalar('loss', test_loss, cumulative_epoch)
+            writer2.add_scalar('correct', test_correct, cumulative_epoch)
             max_test_correct = max(test_correct, max_test_correct)
     # record max_test_correct
-    writer2.add_scalar('max_test_correct', max_test_correct, n_acqs)
+    writer2.add_scalar('max_test_correct', max_test_correct, cumulative_acqs)
 
 
 def main():
@@ -139,7 +144,7 @@ def main():
     assert len(valid_idx) == 100
     assert len(pool_idx) == len(train_data) - 120
 
-    # Make dataloaders
+    # make dataloaders
     # pretrain_sampler = SubsetRandomSampler(pretrain_idx)
     # valid_sampler = SubsetRandomSampler(valid_idx)
     # pretrain_loader = torch.utils.data.DataLoader(
@@ -156,25 +161,23 @@ def main():
     # select lamba/model with lowest validation error
     # weight_decay = compute_weight_decay(pretrain_loader, valid_loader, args, writers)
     weight_decay = 1.0 # for now, let's not bother optimizing weight decay
-    n_acqusitions = 0
     model = BayesianCNN()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
     train_loader = get_train_loader(train_data, acq_idx, args)
-    fit(model, optimizer, train_loader, test_loader, writers, args, n_acqusitions) # do pretraining on 20 examples (not quite clear if Gal does this here, but I think so)
+    fit(model, optimizer, train_loader, test_loader, writers, args, i_round=0) # do pretraining on 20 examples (not quite clear if Gal does this here, but I think so)
     
-    while n_acqusitions < 500: # TODO change to 1000
+    for i_round in range(1, args.rounds + 1):
         # acquire 10 points from train_data according to acq_func
-        new_idx = args.acq_func(train_data, pool_idx, model)
+        new_idx = args.acq_func(train_data, pool_idx, model, args)
         acq_idx.update(new_idx)
         pool_idx.difference_update(new_idx)
-        n_acqusitions += 10
         # reinitalise model
         model = BayesianCNN()
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
         # train model to convergence on all points acquired so far, computing test error as we go
         # train_loader built from train_data and acq_idx, including pretraining examples
         train_loader = get_train_loader(train_data, acq_idx, args)
-        fit(model, optimizer, train_loader, test_loader, writers, args, n_acqusitions)
+        fit(model, optimizer, train_loader, test_loader, writers, args, i_round)
 
 
 if __name__ == '__main__':
