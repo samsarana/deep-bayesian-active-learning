@@ -3,59 +3,9 @@ import numpy as np
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import datasets, transforms
 from models import BayesianCNN
-from torch.utils.data.sampler import SubsetRandomSampler
-from sampling import balanced_sample, StratifiedSampler
-from active_learning import *
-
-def parse_arguments():
-    parser = argparse.ArgumentParser()
-    # experiment settings
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--acqs_per_round', type=int, default=10)
-    parser.add_argument('--rounds', type=int, default=50) # Gal does 100
-    parser.add_argument('--acqs_pretrain', type=int, default=20)
-    # training settings
-    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for Adam optimizer')
-    parser.add_argument('--pretrain_batch_size', type=int, default=20, help='Batch size for pretraining with 20 examples')
-    parser.add_argument('--valid_batch_size', type=int, default=20, help='Batch size for pretraining validation with 100 examples')
-    parser.add_argument('--train_batch_size', type=int, default=32, help='Batch size for training (on 10-1000 examples)')
-    parser.add_argument('--test_batch_size', type=int, default=32, help='Batch size for testing on 10k examples')
-    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs for training')
-    parser.add_argument('--test_interval', type=int, default=10, help='Number of epochs to train before testing')
-    # active learning settings
-    acq_funcs = {'random': acq_random,
-                 'BALD': acq_BALD,
-                 'max_ent': acq_max_ent,
-                 'mean_std': acq_mean_std,
-                 'var_ratios': acq_var_ratios
-    }
-    parser.add_argument('--acq_func_ID', type=str, default='random', choices=acq_funcs.keys(), help='Choose acquisition function')
-    args = parser.parse_args()
-    args.acq_func = acq_funcs[args.acq_func_ID] # create acq_func arg using acq_func_ID
-    return args
-
-def load_data(args):
-    train_data = datasets.MNIST('../data', train=True, download=True,
-                transform=transforms.Compose([
-                        transforms.ToTensor(),
-                        transforms.Normalize((0.1307,), (0.3081,))
-                    ]))
-    test_data = datasets.MNIST('../data', train=False, download=True,
-                 transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))
-                       ]))
-
-    return train_data, test_data
-
-def get_train_loader(train_data, acq_idx, args):
-    train_sampler = SubsetRandomSampler(list(acq_idx))
-    train_loader = torch.utils.data.DataLoader(
-                    train_data, batch_size=args.train_batch_size, sampler=train_sampler)
-    return train_loader
-
+from sampling import balanced_sample
+from utils import *
 
 def train(args, model, train_loader, optimizer):
     model.train()
@@ -95,7 +45,7 @@ def fit(model, optimizer, train_loader, test_loader, writers, args, i_round):
     writer1, writer2 = writers
     cumulative_acqs = args.acqs_pretrain + i_round * args.acqs_per_round
     max_test_correct = 0
-    logging.info('Begin train/test for {} acquisitions'.format(cumulative_acqs)
+    logging.info('Begin train/test for {} acquisitions'.format(cumulative_acqs))
     for epoch in range(1, args.epochs + 1): # TODO may to increase epochs for training on e.g. 1000 points to ensure convergence
         logging.info('Begin training, epoch {}'.format(epoch))
         train_loss, train_correct = train(args, model, train_loader, optimizer)

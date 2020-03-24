@@ -2,6 +2,59 @@ import random, logging, argparse, torch
 import numpy as np
 import torch.optim as optim
 from models import BayesianCNN
+from active_learning import *
+from torchvision import datasets, transforms
+from torch.utils.data.sampler import SubsetRandomSampler
+
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    # experiment settings
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--acqs_per_round', type=int, default=10)
+    parser.add_argument('--rounds', type=int, default=50) # Gal does 100
+    parser.add_argument('--acqs_pretrain', type=int, default=20)
+    # training settings
+    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for Adam optimizer')
+    parser.add_argument('--pretrain_batch_size', type=int, default=20, help='Batch size for pretraining with 20 examples')
+    parser.add_argument('--valid_batch_size', type=int, default=20, help='Batch size for pretraining validation with 100 examples')
+    parser.add_argument('--train_batch_size', type=int, default=32, help='Batch size for training (on 10-1000 examples)')
+    parser.add_argument('--test_batch_size', type=int, default=32, help='Batch size for testing on 10k examples')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs for training')
+    parser.add_argument('--test_interval', type=int, default=10, help='Number of epochs to train before testing')
+    # active learning settings
+    acq_funcs = {'random': acq_random,
+                 'BALD': acq_BALD,
+                 'max_ent': acq_max_ent,
+                 'mean_std': acq_mean_std,
+                 'var_ratios': acq_var_ratios
+    }
+    parser.add_argument('--acq_func_ID', type=str, default='random', choices=acq_funcs.keys(), help='Choose acquisition function')
+    args = parser.parse_args()
+    args.acq_func = acq_funcs[args.acq_func_ID] # create acq_func arg using acq_func_ID
+    return args
+
+
+def load_data(args):
+    train_data = datasets.MNIST('../data', train=True, download=True,
+                transform=transforms.Compose([
+                        transforms.ToTensor(),
+                        transforms.Normalize((0.1307,), (0.3081,))
+                    ]))
+    test_data = datasets.MNIST('../data', train=False, download=True,
+                 transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ]))
+
+    return train_data, test_data
+
+
+def get_train_loader(train_data, acq_idx, args):
+    train_sampler = SubsetRandomSampler(list(acq_idx))
+    train_loader = torch.utils.data.DataLoader(
+                    train_data, batch_size=args.train_batch_size, sampler=train_sampler)
+    return train_loader
+
 
 # def compute_weight_decay(pretrain_loader, valid_loader, args, writers):
 #     """
