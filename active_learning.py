@@ -56,24 +56,6 @@ def acq_max_ent(train_data, pool_idx, model, args):
             best_ent_idx = all_ent_idx[sorted_ind][-args.acqs_per_round:]
             logging.info('Computing entropy for points with (original) indices {}-{} in pool'.format(
                 idx[0], idx[-1]))
-
-    # Old code
-    # for i in pool_idx:
-    #     data, _ = train_data[i]
-    #     data = data.unsqueeze(0) # create a batch dim, so data.shape = [1,1,28,28]
-    #     output = model.forward_stochastic(data, k=args.dropout_samples)
-    #     assert output.shape == (1, 10, args.dropout_samples) # only verified correctness for single batch computation
-    #     # mean over dropout samples
-    #     log_p_yc_xD = output.mean(dim=-1)
-    #     # compute entropy and sum over class dimension TODO write some checks to verify entropy calculation
-    #     H_y_xD = - (log_p_yc_xD * log_p_yc_xD.exp()).sum(dim=-1).item()
-    #     # store entropy and index if it's in the top args.acqs_per_round
-    #     threshold_entropy, _ = top_entropies_and_idx[0] # threshold_entropy is the min of the args.acqs_per_round max entropies
-    #     if H_y_xD > threshold_entropy:
-    #         top_entropies_and_idx[0] = (H_y_xD, i)
-    #         top_entropies_and_idx.sort()
-    #     if i % 1000 == 0:
-    #         logging.info('Computing entropy for point {} in pool'.format(i))
     
     assert best_ent_idx.shape == (args.acqs_per_round, 2)
     end = time.time()
