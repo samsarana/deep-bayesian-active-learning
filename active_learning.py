@@ -42,13 +42,16 @@ def acq_max_ent(train_data, pool_idx, model, args):
     pool_loader = make_dataloader(train_data, pool_idx, args.test_batch_size, random=False) # note 1
     with torch.no_grad():
         for data, _, idx in pool_loader:
-            output = model.forward_stochastic(data, k=args.dropout_samples).double() # do entropy calcs in double precision
+            logprobs = model.forward_stochastic(data, k=args.dropout_samples).double() # do entropy calcs in double precision
+            # model outputs logprobs (final layer is log_softmax(.))
+            # this is for numerical stability in softmax computation
+            # convert these back to probs to do entropy calculations
+            probs = logprobs.exp()
             # mean over dropout samples
-            log_p_yc_xD = output.mean(dim=-1)
-            # compute entropy and sum over class dimension TODO write some checks to verify entropy calculation
-            H_y_xD = - (log_p_yc_xD * log_p_yc_xD.exp()).sum(dim=-1).numpy()
+            p_yc_xD = probs.mean(dim=-1)
+            # compute entropy and sum over class dimension
+            H_y_xD = - (p_yc_xD * p_yc_xD.log()).sum(dim=-1).numpy()
             # add new (entropy, index) tuples to array of best so far
-            import ipdb;ipdb.set_trace()
             new_ent_idx = np.column_stack((H_y_xD, idx))
             all_ent_idx = np.concatenate((new_ent_idx, best_ent_idx), axis=0)
             # sort by entropy and take top 10 so far
