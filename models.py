@@ -20,6 +20,22 @@ class BayesianCNN(nn.Module):
         self.fc2 = nn.Linear(128, 10)
 
     def forward(self, x):
+        """
+        Computes forward pass with input `x` and returns output
+
+        Parameters
+        ----------
+        self
+        x: torch.Tensor
+            input tensor
+            x.shape == [b, 1, 28, 28]
+        
+        Returns
+        -------
+        output: torch.Tensor
+            output tensor
+            output.shape == [b, 10]
+        """
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
@@ -33,3 +49,30 @@ class BayesianCNN(nn.Module):
         x = self.fc2(x)
         output = F.log_softmax(x, dim=1)
         return output
+
+    def forward_stochastic(self, x, k=20):
+        """
+        Computes `k` stochastic forward passes with input `x` and returns tensor
+        of all outputs
+        NB Dropout must be on (model.train())
+
+        Parameters
+        ----------
+        self
+        x: torch.Tensor
+            input tensor
+            x.shape == [b, 1, 28, 28]
+        k: int
+            number of stochastic forward passes/dropout masks/samples from approx posterior
+        
+        Returns
+        -------
+        output: torch.Tensor
+            output tensor
+            output.shape == [b, 10, k]
+        """
+        self.train() # ensure dropout is on
+        out = []
+        for i in range(k):
+            out.append(self.forward(x))
+        return torch.stack(out, dim=-1)
