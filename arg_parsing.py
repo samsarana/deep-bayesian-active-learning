@@ -17,14 +17,14 @@ def parse_arguments():
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs for training')
     parser.add_argument('--test_interval', type=int, default=10, help='Number of epochs to train before testing')
     # active learning settings
+    parser.add_argument('--random_acq', action='store_true', help='Acquire points uniformly at random instead of using an acquisition function')
     parser.add_argument('--dropout_samples', type=int, default=20, help='Number of MC-dropout samples from approximate posterior') # NB Gal uses 100?
-    acq_funcs = {'random': acq_random,
-                 'BALD': acq_BALD,
-                 'max_ent': acq_max_ent,
-                 'mean_std': acq_mean_std,
-                 'var_ratios': acq_var_ratios
+    acq_funcs = {'info_gain': info_gain,
+                 'max_ent': max_ent,
+                 'mean_std': mean_std,
+                 'var_ratio': var_ratio
     }
-    parser.add_argument('--acq_func_ID', type=str, default='random', choices=acq_funcs.keys(), help='Choose acquisition function')
+    parser.add_argument('--acq_func_ID', type=str, default='info_gain', choices=acq_funcs.keys(), help='Choose acquisition function')
     args = parser.parse_args()
     args.acq_func = acq_funcs[args.acq_func_ID] # create acq_func arg using acq_func_ID
     return args
