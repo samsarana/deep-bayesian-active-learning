@@ -1,46 +1,94 @@
+"""Helper classes and functions for loading and sampling from data.
+"""
+
 import random, logging, argparse, torch
 import numpy as np
 import torch.optim as optim
 from models import BayesianCNN
-from active_learning import *
 from torchvision import datasets, transforms
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data.sampler import Sampler, SubsetRandomSampler
 
-def parse_arguments():
-    parser = argparse.ArgumentParser()
-    # experiment settings
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--acqs_per_round', type=int, default=10)
-    parser.add_argument('--rounds', type=int, default=50) # Gal does 100
-    parser.add_argument('--acqs_pretrain', type=int, default=20)
-    # training settings
-    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for Adam optimizer')
-    parser.add_argument('--pretrain_batch_size', type=int, default=20, help='Batch size for pretraining with 20 examples')
-    parser.add_argument('--valid_batch_size', type=int, default=20, help='Batch size for pretraining validation with 100 examples')
-    parser.add_argument('--train_batch_size', type=int, default=32, help='Batch size for training (on 10-1000 examples)')
-    parser.add_argument('--test_batch_size', type=int, default=32, help='Batch size for testing on 10k examples')
-    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs for training')
-    parser.add_argument('--test_interval', type=int, default=10, help='Number of epochs to train before testing')
-    # active learning settings
-    acq_funcs = {'random': acq_random,
-                 'BALD': acq_BALD,
-                 'max_ent': acq_max_ent,
-                 'mean_std': acq_mean_std,
-                 'var_ratios': acq_var_ratios
-    }
-    parser.add_argument('--acq_func_ID', type=str, default='random', choices=acq_funcs.keys(), help='Choose acquisition function')
-    args = parser.parse_args()
-    args.acq_func = acq_funcs[args.acq_func_ID] # create acq_func arg using acq_func_ID
-    return args
+class SubsetSampler(Sampler):
+    """
+    Samples elements from a given list of indices, without replacement.
+    Had to write this function because it's not implemented in the library
+    (see stackoverflow.com/questions/47432168/taking-subsets-of-a-pytorch-dataset)
+
+    Parameters
+    ----------
+    indices: sequence
+        sequence of indices defining the subset
+    """
+
+    def __init__(self, indices):
+        self.indices = indices
+
+    def __iter__(self):
+        return (self.indices[i] for i in range(len(self.indices)))
+
+    def __len__(self):
+        return len(self.indices)
+
+
+def balanced_sample(dataset, n_classes, k, idx_possible):
+    """
+    Returns indices `idx_sampled` of `n_classes` * `k` random samples from dataset, s.t. each
+    class is sampled `k` times. Also returns remaining indices (i.e.
+    `idx_possible` - `idx_sampled`).
+    
+    Parameters
+    ----------
+    dataset: torchvision.datasets.mnist.MNIST
+        a PyTorch dataset
+    n_classes: int
+        number of class labels in `dataset`
+    k: int
+        required number of samples of each class in our balanced sample
+    idx: list
+        list of indices in dataset that we can sample from
+    
+    Returns
+    -------
+    TODO complete docstr
+    """
+    idx_sampled = set()
+    labels = [] # used to check for correctness
+    label_counts = {label: 0 for label in range(n_classes)}
+    while any(count < k for count in label_counts.values()):
+        i = random.choice(tuple(idx_possible))
+        _, label, _ = dataset[i]
+        if label_counts[label] < k:
+            idx_sampled.add(i)
+            idx_possible.remove(i)
+            label_counts[label] += 1
+            labels.append(label)
+    assert all(labels.count(label) == k for label in range(n_classes))
+    assert all(j not in idx_possible for j in idx_sampled)
+    return idx_sampled, idx_possible
+
+
+def dataset_with_indices(cls):
+    """
+    Modifies the given Dataset class to return a tuple data, target, index
+    instead of just data, target.
+    """
+    def __getitem__(self, index):
+        data, target = cls.__getitem__(self, index)
+        return data, target, index
+
+    return type(cls.__name__, (cls,), {
+        '__getitem__': __getitem__,
+    })
 
 
 def load_data(args):
-    train_data = datasets.MNIST('../data', train=True, download=True,
+    MNISTWithIndices = dataset_with_indices(datasets.MNIST)
+    train_data = MNISTWithIndices('../data', train=True, download=True,
                 transform=transforms.Compose([
                         transforms.ToTensor(),
                         transforms.Normalize((0.1307,), (0.3081,))
                     ]))
-    test_data = datasets.MNIST('../data', train=False, download=True,
+    test_data = MNISTWithIndices('../data', train=False, download=True,
                  transform=transforms.Compose([
                            transforms.ToTensor(),
                            transforms.Normalize((0.1307,), (0.3081,))
@@ -49,11 +97,29 @@ def load_data(args):
     return train_data, test_data
 
 
-def get_train_loader(train_data, acq_idx, args):
-    train_sampler = SubsetRandomSampler(list(acq_idx))
-    train_loader = torch.utils.data.DataLoader(
-                    train_data, batch_size=args.train_batch_size, sampler=train_sampler)
-    return train_loader
+def make_dataloader(data, idx, batch_size, random=True):
+    """
+    Parameters
+    ----------
+    data: torch.utils.data.Dataset
+        base dataset to be sampled from
+    idx: set
+        indices of data that dataloader will load data from
+    args: Namespace object
+        experiment arguments from argparse
+    
+    Returns
+    -------
+    dataloader: torch.utils.data.DataLoader
+        DataLoader iterable for iterating through train/test data
+    """
+    if random:
+        sampler = SubsetRandomSampler(list(idx))
+    else:
+        sampler = SubsetSampler(list(idx))
+    dataloader = torch.utils.data.DataLoader(
+                    data, batch_size=batch_size, sampler=sampler)
+    return dataloader
 
 
 # def compute_weight_decay(pretrain_loader, valid_loader, args, writers):
