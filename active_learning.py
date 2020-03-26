@@ -38,6 +38,8 @@ def make_acquisitions(train_data, pool_idx, model, args):
         pool_loader = make_dataloader(train_data, args.test_batch_size, idx=pool_idx) # note 1
         with torch.no_grad():
             for data, _, idx in pool_loader:
+                logging.info('Computing info gain for points with (original) indices {}-{} in pool'.format(
+                    idx[0], idx[-1]))
                 logprobs = model.forward_stochastic(data, k=args.dropout_samples).double() # do entropy calcs in double precision
                 # model outputs logprobs (final layer is log_softmax(.))
                 # this is for numerical stability in softmax computation
@@ -50,12 +52,10 @@ def make_acquisitions(train_data, pool_idx, model, args):
                 # sort by entropy and take top 10 so far
                 sorted_ind = all_ent_idx[:,0].argsort()
                 best_ent_idx = all_ent_idx[sorted_ind][-args.acqs_per_round:]
-                logging.info('Computing entropy for points with (original) indices {}-{} in pool'.format(
-                    idx[0], idx[-1]))
         
         assert best_ent_idx.shape == (args.acqs_per_round, 2)
         end = time.time()
-        logging.info("Time taken for {} acquisitions: {}".format(args.acqs_per_round, end - start))
+        logging.info("Time taken for {} acquisitions: {:.1f}s".format(args.acqs_per_round, end - start))
         new_idx = set(best_ent_idx[:,1].astype(int))
         mean_info = best_ent_idx[:,0].mean()
     return new_idx, mean_info
