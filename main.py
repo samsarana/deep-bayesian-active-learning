@@ -104,13 +104,18 @@ def main():
     args = parse_arguments()
     # setup logging
     experiment_name = 'random' if args.random_acq else args.acq_func_ID
-    args.logdir = './logs/{}/{}'.format(experiment_name, args.seed)
-    logging.basicConfig(level=logging.INFO)
-    # setup TensorBoard logging
+    args.logdir = './logs/{}/seed{}'.format(experiment_name, args.seed)
+    # TensorBoard logging
     writer1 = SummaryWriter(log_dir=args.logdir+'-1')
     writer2 = SummaryWriter(log_dir=args.logdir+'-2')
     writers = [writer1, writer2]
-
+    # python logging
+    logging.basicConfig(filename='./logs/{}/seed{}.log'.format(
+        experiment_name, args.seed), level=logging.INFO)
+    logging.getLogger().addHandler(logging.StreamHandler()) # makes messages print to stderr, too
+    logging.info('Running experiment with the following settings:')
+    for arg in vars(args):
+        logging.info('{}: {}'.format(arg, getattr(args, arg)))
     # for reproducibility
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
