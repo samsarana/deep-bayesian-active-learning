@@ -149,13 +149,10 @@ def main():
     # weight_decay = 1.0
     model = BayesianCNN()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
-    # if args.acqs_pretrain > 0:
     fit(model, optimizer, train_loader, test_loader, args, writers, i_round=0) # do pretraining on 20 examples (not quite clear if Gal does this here, but I think so)
     
-    # REMOVE
-    # pool_idx.difference_update(set(range(1000, 60000))) # srink size of pool to do some checks
-    # END REMOVE
     for i_round in range(1, args.rounds + 1):
+        logging.info('\nBEGIN ROUND {}\n'.format(i_round))
         # acquire 10 points from train_data according to acq_func
         new_idx, mean_info_gain = make_acquisitions(train_data, pool_idx, model, args)
         if not args.random_acq: writer1.add_scalar('mean_info_gain', mean_info_gain, i_round)
@@ -169,9 +166,9 @@ def main():
         model = BayesianCNN()
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
         # train model to convergence on all points acquired so far, computing test error as we go
-        oldw1 = list(model.parameters())[0][0][0][0][0]
+        oldw1 = list(model.parameters())[0][0][0][0][0].item()
         fit(model, optimizer, train_loader, test_loader, args, writers, i_round)
-        neww1 = list(model.parameters())[0][0][0][0][0]
+        neww1 = list(model.parameters())[0][0][0][0][0].item()
         assert oldw1 != neww1, "fit(.) didn't update model parameters"
 
 
