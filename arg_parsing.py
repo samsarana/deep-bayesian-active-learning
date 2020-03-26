@@ -11,7 +11,7 @@ def parse_arguments():
     # training settings
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for Adam optimizer')
     parser.add_argument('--pretrain_batch_size', type=int, default=20, help='Batch size for pretraining with 20 examples')
-    parser.add_argument('--valid_batch_size', type=int, default=20, help='Batch size for pretraining validation with 100 examples')
+    parser.add_argument('--valid_batch_size', type=int, default=100, help='Batch size for pretraining validation with 100 examples')
     parser.add_argument('--train_batch_size', type=int, default=32, help='Batch size for training (on 10-1000 examples)')
     parser.add_argument('--test_batch_size', type=int, default=1000, help='Batch size for testing on 10k examples. This should be as large as possible without crashing the C/GPU')
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs for training')
