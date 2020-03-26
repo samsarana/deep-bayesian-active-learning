@@ -35,7 +35,7 @@ def make_acquisitions(train_data, pool_idx, model, args):
     else:
         best_ent_idx = np.zeros(shape=(0,2), dtype=np.float64) # array for storing top 10 (entropy, idx) pairs
         start = time.time()
-        pool_loader = make_dataloader(train_data, pool_idx, args.test_batch_size, random=False) # note 1
+        pool_loader = make_dataloader(train_data, args.test_batch_size, idx=pool_idx) # note 1
         with torch.no_grad():
             for data, _, idx in pool_loader:
                 logprobs = model.forward_stochastic(data, k=args.dropout_samples).double() # do entropy calcs in double precision
