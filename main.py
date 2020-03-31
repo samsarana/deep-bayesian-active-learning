@@ -146,6 +146,7 @@ def main():
     #    compute validation error on 100 points
     # select lamba/model with lowest validation error
     weight_decay = compute_weight_decay(train_loader, valid_loader, args, writers, i_round=0)
+    writer1.add_scalar('optimal_lambda', weight_decay, 0)
     # weight_decay = 1.0
     model = BayesianCNN()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
@@ -162,6 +163,7 @@ def main():
         train_loader = make_dataloader(train_data, args.train_batch_size, idx=acq_idx, random=True)
         # reoptimize weight decay given updated, larger training set. Unclear if Gal does this, but seems natural
         weight_decay = compute_weight_decay(train_loader, valid_loader, args, writers, i_round)
+        writer1.add_scalar('optimal_lambda', weight_decay, i_round)
         # reinitalise model
         model = BayesianCNN()
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
