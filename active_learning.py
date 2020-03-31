@@ -1,5 +1,6 @@
 import random, torch, time, logging
 import numpy as np
+from math import log
 from utils import make_dataloader
 
 def make_acquisitions(train_data, pool_idx, model, args):
@@ -92,3 +93,20 @@ def var_ratio(probs):
     # var_ratios = (1 - max prob over classes)
     var_ratios = 1 - p_yc.max(dim=-1).values.numpy()
     return var_ratios
+
+def log_acquisitions(new_idx, train_data, mean_info_gain, i_round, writers, cumulative_acqs):
+    # log acquired labels and the entropy of their distribution (high entropy -> more diverse labels)
+    writer1, _ = writers
+    labels_to_counts = {}
+    for idx in new_idx:
+        _, label, _ = train_data[idx]
+        writer1.add_scalar('acq_labels', label, cumulative_acqs)
+        labels_to_counts[label] = labels_to_counts.get(label, 0) + 1
+        cumulative_acqs += 1
+    entropy_acq_labels = 0
+    for label, count in labels_to_counts.items():
+        p = count / len(new_idx)
+        entropy_acq_labels -= p*log(p)
+    writer1.add_scalar('entropy_acq_labels', entropy_acq_labels, i_round)
+    # finally, log mean_info_gain
+    if mean_info_gain: writer1.add_scalar('mean_info_gain', mean_info_gain, i_round)
