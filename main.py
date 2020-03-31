@@ -4,7 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from models import BayesianCNN
-from active_learning import make_acquisitions
+from active_learning import make_acquisitions, log_acquisitions
 from arg_parsing import parse_arguments
 from utils import load_data, make_dataloader, balanced_sample
 
@@ -131,6 +131,8 @@ def main():
     valid_idx, pool_idx = balanced_sample(train_data, n_classes=10, k=10, 
         idx_possible=pool_idx) # Gal doesn't mention if validation set is balanced
     acq_idx = pretrain_idx.copy() # first 20 acquisitions are the pretraining data
+    log_acquisitions(pretrain_idx, train_data, mean_info_gain=None, i_round=0,
+                     writers=writers, cumulative_acqs=0)
     
     assert len(pretrain_idx) == 20
     assert len(valid_idx) == 100
@@ -154,14 +156,18 @@ def main():
     fit(model, optimizer, train_loader, test_loader, args, writers, i_round=0) # do pretraining on 20 examples (not quite clear if Gal does this here, but I think so)
     torch.save(model.state_dict(), './logs/{}/checkpts/model_0.pt'.format(
         experiment_name))    
-
+    
+    # for short code tests: [also use --rounds 2 --epochs 1 --dropout_samples 10]
+    # pool_idx.difference_update(set(range(100,60000)))
     for i_round in range(1, args.rounds + 1):
         logging.info('\nBEGIN ROUND {}\n'.format(i_round))
-        # acquire 10 points from train_data according to acq_func
-        new_idx, mean_info_gain = make_acquisitions(train_data, pool_idx, model, args)
-        if not args.random_acq: writer1.add_scalar('mean_info_gain', mean_info_gain, i_round)
+        # acquire args.acqs_per_round points from train_data according to acq_func
+        new_idx, mean_info_gain = make_acquisitions(train_data, pool_idx, model, args)        
         acq_idx.update(new_idx)
         pool_idx.difference_update(new_idx)
+        # log some data about those acquisitions
+        n_acqs_previous = args.acqs_pretrain + (i_round-1) * args.acqs_per_round
+        log_acquisitions(new_idx, train_data, mean_info_gain, i_round, writers, cumulative_acqs=n_acqs_previous)
         # build new train_loader using updated acq_idx
         train_loader = make_dataloader(train_data, args.train_batch_size, idx=acq_idx, random=True)
         # reoptimize weight decay given updated, larger training set. Unclear if Gal does this, but seems natural
