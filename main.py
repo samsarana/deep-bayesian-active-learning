@@ -1,4 +1,4 @@
-import random, logging, torch
+import random, logging, torch, os
 import numpy as np
 import torch.optim as optim
 import torch.nn.functional as F
@@ -104,10 +104,11 @@ def main():
     args = parse_arguments()
     # setup logging
     experiment_name = 'random' if args.random_acq else args.acq_func_ID
-    args.logdir = './logs/{}/seed{}'.format(experiment_name, args.seed)
+    logdir = './logs/{}/seed{}'.format(experiment_name, args.seed)
+    os.makedirs('./logs/{}/checkpts/'.format(experiment_name), exist_ok=True) # make dir for saving models at checkpoints
     # TensorBoard logging
-    writer1 = SummaryWriter(log_dir=args.logdir+'-1')
-    writer2 = SummaryWriter(log_dir=args.logdir+'-2')
+    writer1 = SummaryWriter(log_dir=logdir+'-1')
+    writer2 = SummaryWriter(log_dir=logdir+'-2')
     writers = [writer1, writer2]
     # python logging
     logging.basicConfig(filename='./logs/{}/seed{}.log'.format(
@@ -146,12 +147,14 @@ def main():
     #    compute validation error on 100 points
     # select lamba/model with lowest validation error
     weight_decay = compute_weight_decay(train_loader, valid_loader, args, writers, i_round=0)
-    writer1.add_scalar('optimal_lambda', weight_decay, 0)
     # weight_decay = 1.0
+    writer1.add_scalar('optimal_lambda', weight_decay, 0)
     model = BayesianCNN()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=weight_decay)
     fit(model, optimizer, train_loader, test_loader, args, writers, i_round=0) # do pretraining on 20 examples (not quite clear if Gal does this here, but I think so)
-    
+    torch.save(model.state_dict(), './logs/{}/checkpts/model_0.pt'.format(
+        experiment_name))    
+
     for i_round in range(1, args.rounds + 1):
         logging.info('\nBEGIN ROUND {}\n'.format(i_round))
         # acquire 10 points from train_data according to acq_func
@@ -170,6 +173,8 @@ def main():
         # train model to convergence on all points acquired so far, computing test error as we go
         oldw1 = list(model.parameters())[0][0][0][0][0].item()
         fit(model, optimizer, train_loader, test_loader, args, writers, i_round)
+        torch.save(model.state_dict(), './logs/{}/checkpts/model_{}.pt'.format(
+            experiment_name, i_round))
         neww1 = list(model.parameters())[0][0][0][0][0].item()
         assert oldw1 != neww1, "fit(.) didn't update model parameters"
 
